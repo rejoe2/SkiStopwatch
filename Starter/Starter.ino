@@ -37,6 +37,8 @@ https://github.com/rogerclarkmelbourne/Arduino_STM32/blob/master/STM32F1/librari
 #define MY_TRANSPORT_WAIT_READY_MS 1
 #include <MySensors.h>
 #include <SPI.h>
+#include <Bounce2.h>
+
 unsigned long PING_RX_MAX_TIME = 12000; // Max. time between ping signals from finish Node (in milliseconds)
 unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
 
@@ -47,7 +49,7 @@ MyMessage StarterMsg(0, V_TRIPPED);
 #define SENSOR_INTERRUPT DIGITAL_INPUT_SENSOR-2 // Usually the interrupt = pin -2 (on uno/nano anyway)
 #define CHILD_ID_STARTER 10              // Id of the sensor child
 
-#define CONNECTION_LED  A0  // Arduino Digital I/O pin number for signalising  
+#define CONNECTION_LED A0  // Arduino Digital I/O pin number for signalising  
 #define CHILD_ID_STATUS 100   // Id of the sensor child
 #define LED_ON 1
 #define LED_OFF 0
@@ -83,6 +85,10 @@ void before() {
   pinMode(RUNNING_LED, OUTPUT);
   
   // Switch off when starting up
+  digitalWrite(CONNECTION_LED, LED_ON);
+  digitalWrite(READY_LED, LED_ON);
+  digitalWrite(RUNNING_LED, LED_ON);
+  delay(2000);
   digitalWrite(CONNECTION_LED, LED_OFF);
   digitalWrite(READY_LED, LED_OFF);
   digitalWrite(RUNNING_LED, LED_OFF);
@@ -114,22 +120,22 @@ void loop()
     debouncer[i].update();
     button[i] = debouncer[i].read() == HIGH;
     if (button[i] != oldButton[i] && button[i]) {
-      send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_PIR_ID + i).set( pir[i])); // Send tripped value to sister node
+      send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i]? "1" : "0")); // Send tripped value to sister node
       if (i == 0 && button[i]) {
         if (request_Reset == false) {
           // Send in the new temperature
-          digitalWrite(READY_LED, RELAY_OFF);
-		  digitalWrite(RUNNING_LED;LED_OFF);
+          digitalWrite(READY_LED, LED_OFF);
+		  digitalWrite(RUNNING_LED,LED_OFF);
 		  request_Reset = true;
-		  send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( pir[i])); // Send tripped value to sister node
+		  send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0")); // Send tripped value to sister node
         }
       }
-      oldPir[i] = pir[i];
+      oldButton[i] = button[i];
     }
   }
   
   if (currentTime - lastSend > PING_TX_TIME) {
-    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set(true));
+    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"));
     lastSend = currentTime;
   }
   if (digitalRead(CONNECTION_LED) == LED_ON && currentTime - lastReceive > PING_RX_MAX_TIME) {
@@ -139,10 +145,10 @@ void loop()
 
 void receive(const MyMessage & message) {
   if (message.sensor == CHILD_ID_STATUS) {
-    //if (message.type == V_LIGHT) {
+    //if (message.type == V_MOTION) {
       // Change relay state
       bool state = message.getBool();
-      if(digitalRead(CONNECTION_LED) == LED_ON) {
+      if(digitalRead(CONNECTION_LED) == LED_OFF) {
         digitalWrite(CONNECTION_LED, state ? LED_ON : LED_OFF);
       }
       lastReceive = millis();
@@ -159,7 +165,7 @@ void receive(const MyMessage & message) {
   else if(message.sensor == CHILD_ID_RESET) {
 	digitalWrite(READY_LED, LED_ON);
 	request_Reset = false;
-	digitalWrite(RUNNING_LED;LED_OFF);
+	digitalWrite(RUNNING_LED,LED_OFF);
 	is_Running = false;
 #ifdef MY_DEBUG
 	// Write some debug info
@@ -172,7 +178,7 @@ void receive(const MyMessage & message) {
 void startRace()
 {
 	if (digitalRead(CONNECTION_LED) == LED_ON) {
-		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set(true));
+		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set("1"));
 		is_Running = true;
 		digitalWrite(RUNNING_LED, LED_ON);
 		digitalWrite(READY_LED,LED_OFF);
