@@ -1,18 +1,5 @@
 /**
   Starter Node for Ski race Stopwatch
-
-  ESP8266+SPI-Display+MySensors
-https://github.com/Yveaux/Dollhouse_sketches/blob/master/MySensorsTV/MySensorsTV.ino
-http://embedded-lab.com/blog/tutorial-7-esp8266-ili9341-tft-lcd/
-
-
-
-ATMEGA2650+Display
-https://www.mysensors.org/build/scene_controller
-
-Dual SPI@STM32F1
-https://github.com/rogerclarkmelbourne/Arduino_STM32/blob/master/STM32F1/libraries/SPI/examples/using_SPI_ports/using_SPI_ports.ino
-
   
   */
 
@@ -39,8 +26,8 @@ https://github.com/rogerclarkmelbourne/Arduino_STM32/blob/master/STM32F1/librari
 #include <SPI.h>
 #include <Bounce2.h>
 
-unsigned long PING_RX_MAX_TIME = 12000; // Max. time between ping signals from finish Node (in milliseconds)
-unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
+unsigned long PING_RX_MAX_TIME = 31000; // Max. time between ping signals from finish Node (in milliseconds)
+//unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
 
 MyMessage PingMsg(0, V_TRIPPED);
 MyMessage StarterMsg(0, V_TRIPPED);
@@ -66,11 +53,11 @@ bool oldButton[MAX_BUTTON] = {false};
 
 #define CHILD_ID_RESET 99   // Id of the sensor child
 
-bool Sister_Received = false;
+bool connected = false;
 bool request_Reset = false;
 bool is_Running = false;
 
-unsigned long lastSend,lastReceive;
+unsigned long lastReceive; //lastSend,
 
 void before() {
 
@@ -107,11 +94,10 @@ void presentation()  {
 }
 
 void setup() {
-  lastSend = lastReceive = millis();
+  lastReceive = millis(); //lastSend = 
 }
 
-void loop()
-{
+void loop() {
   unsigned long currentTime = millis();
   
   bool button[MAX_BUTTON];
@@ -120,49 +106,53 @@ void loop()
     debouncer[i].update();
     button[i] = debouncer[i].read() == HIGH;
     if (button[i] != oldButton[i] && button[i]) {
-      send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i]? "1" : "0")); // Send tripped value to sister node
+      //send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i]? "1" : "0")); // Send tripped value to sister node
       if (i == 0 && button[i]) {
         if (request_Reset == false) {
           // Send in the new temperature
           digitalWrite(READY_LED, LED_OFF);
 		  digitalWrite(RUNNING_LED,LED_OFF);
 		  request_Reset = true;
-		  send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0")); // Send tripped value to sister node
+		  send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0"), true); // Send tripped value to sister node
         }
-      }
+#ifdef MY_DEBUG
+		Serial.print(F("Button "));
+		Serial.print(i);
+		Serial.println(F(" pressed"));
+#endif
+	  }
       oldButton[i] = button[i];
     }
   }
   
-  if (currentTime - lastSend > PING_TX_TIME) {
+/*  if (currentTime - lastSend > PING_TX_TIME) {
     send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"));
     lastSend = currentTime;
-  }
-  if (digitalRead(CONNECTION_LED) == LED_ON && currentTime - lastReceive > PING_RX_MAX_TIME) {
+  }*/
+  if (connected = true && currentTime - lastReceive > PING_RX_MAX_TIME) {
     digitalWrite(CONNECTION_LED,LED_OFF);
+	connected = false;
+#ifdef MY_DEBUG
+    Serial.println(F("Lost connection to sister"));
+#endif
   }  
 }
 
 void receive(const MyMessage & message) {
-  if (message.sensor == CHILD_ID_STATUS) {
-    //if (message.type == V_MOTION) {
-      // Change relay state
-      bool state = message.getBool();
-      if(digitalRead(CONNECTION_LED) == LED_OFF) {
-        digitalWrite(CONNECTION_LED, state ? LED_ON : LED_OFF);
-      }
-      lastReceive = millis();
+    if(!connected) {
+        digitalWrite(CONNECTION_LED, LED_ON);
+		connected = true;
+	}
+    lastReceive = millis();
 #ifdef MY_DEBUG
-      // Write some debug info
-      Serial.print(F("Child: "));
-      Serial.print(message.sensor);
-      Serial.print(F(", New status: "));
-      Serial.println(state);
+    // Write some debug info
+    Serial.print(F("Received info for child: "));
+    Serial.print(message.sensor);
+    Serial.println(F(", timer reset."));
 #endif
-    //}
-  }
+
   
-  else if(message.sensor == CHILD_ID_RESET) {
+  if(message.sensor == CHILD_ID_RESET) {
 	digitalWrite(READY_LED, LED_ON);
 	request_Reset = false;
 	digitalWrite(RUNNING_LED,LED_OFF);
@@ -171,14 +161,13 @@ void receive(const MyMessage & message) {
 	// Write some debug info
 	Serial.println(F("Received reset"));
 #endif
-
   }
 }
 
 void startRace()
 {
-	if (digitalRead(CONNECTION_LED) == LED_ON) {
-		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set("1"));
+	if (connected) {
+		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set("1"),true);
 		is_Running = true;
 		digitalWrite(RUNNING_LED, LED_ON);
 		digitalWrite(READY_LED,LED_OFF);
