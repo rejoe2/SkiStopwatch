@@ -1,6 +1,19 @@
 /**
   Finish Node for Ski race Stopwatch
-*/
+
+  ESP8266+SPI-Display+MySensors
+https://github.com/Yveaux/Dollhouse_sketches/blob/master/MySensorsTV/MySensorsTV.ino
+http://embedded-lab.com/blog/tutorial-7-esp8266-ili9341-tft-lcd/
+
+
+
+ATMEGA2650+Display
+https://www.mysensors.org/build/scene_controller
+
+Dual SPI@STM32F1
+https://github.com/rogerclarkmelbourne/Arduino_STM32/blob/master/STM32F1/libraries/SPI/examples/using_SPI_ports/using_SPI_ports.ino
+
+  */
 
 // Enable debug prints to serial monitor
 #define MY_DEBUG
@@ -25,8 +38,8 @@
 #include <SPI.h>
 #include <Bounce2.h>
 
-unsigned long PING_RX_MAX_TIME = 12000; // Max. time between ping signals from finish Node (in milliseconds)
-unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
+unsigned long PING_RX_MAX_TIME = 31000; // Max. time between ping signals from finish Node (in milliseconds)
+unsigned long PING_TX_TIME = 10000; //send "alive" signal periodically
 
 MyMessage PingMsg(0, V_TRIPPED);
 MyMessage ResetMsg(0, V_TRIPPED);
@@ -52,11 +65,11 @@ bool oldButton[MAX_BUTTON] = {false};
 
 #define CHILD_ID_RESET 99   // Id of the sensor child
 
-bool Sister_Received = false;
+bool connected = false;
 bool request_Reset = false;
 bool is_Running = false;
 
-unsigned long lastSend,lastReceive;
+unsigned long lastReceive; //lastSend,
 
 volatile long startTime = 0;
 volatile float RaceTime[4];
@@ -97,7 +110,7 @@ void presentation()  {
 }
 
 void setup() {
-  lastSend = lastReceive = millis();
+  lastReceive = millis(); //lastSend = 
 }
 
 void loop()
@@ -108,28 +121,39 @@ void loop()
     debouncer[i].update();
     button[i] = debouncer[i].read() == HIGH;
     if (button[i] != oldButton[i] && button[i]) {
-      send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i] ? "1" : "0")); // Send tripped value to sister node
+      //send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i] ? "1" : "0")); // Send tripped value to sister node
       if (i == 0 && button[i]) {
-        digitalWrite(READY_LED, LED_OFF);
-		digitalWrite(RUNNING_LED,LED_OFF);
+        digitalWrite(RUNNING_LED,LED_OFF);
 		is_Running = false;
-		send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0")); // Send tripped value to sister node
-        if (digitalRead(CONNECTION_LED) == LED_ON) {
+		send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0"),true); // Send tripped value to sister node
+        if (connected) {
 			digitalWrite(READY_LED, LED_ON);
+		}
+		else {
+			digitalWrite(READY_LED, LED_OFF);
 		}
       }
       oldButton[i] = button[i];
+#ifdef MY_DEBUG
+ 	  Serial.print(F("Button "));
+	  Serial.print(i);
+	  Serial.println(F(" pressed"));
+#endif
     }
   }
 
   
   unsigned long currentTime = millis();
-  if (currentTime - lastSend > PING_TX_TIME) {
-    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"));
-    lastSend = currentTime;
+  if (currentTime - lastReceive > PING_TX_TIME) {
+    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"),true);
+    //lastSend = currentTime;
   }
-  if (digitalRead(CONNECTION_LED) == LED_ON && currentTime - lastReceive > PING_RX_MAX_TIME) {
+  if (connected && currentTime - lastReceive > PING_RX_MAX_TIME) {
     digitalWrite(CONNECTION_LED,LED_OFF);
+	connected = false;
+#ifdef MY_DEBUG
+    Serial.println(F("Lost connection to sister"));
+#endif
   }  
   if (displayNeedsUpdate) {
 	  updateDisplay();
@@ -137,54 +161,48 @@ void loop()
 }
 
 void receive(const MyMessage & message) {
-  
-  if (message.sensor == CHILD_ID_STATUS) {
-    //if (message.type == V_LIGHT) {
-      // Change relay state
-      bool state = message.getBool();
-      if(digitalRead(CONNECTION_LED) == LED_OFF) {
-        digitalWrite(CONNECTION_LED, state ? LED_ON : LED_OFF);
-      }
-      lastReceive = millis();
+    if(!connected) {
+        digitalWrite(CONNECTION_LED, LED_ON);
+		connected = true;
+	}
+    lastReceive = millis();
 #ifdef MY_DEBUG
-      // Write some debug info
-      Serial.print(F("Child: "));
-      Serial.print(message.sensor);
-      Serial.print(F(", New status: "));
-      Serial.println(state);
-	  //}
+    // Write some debug info
+    if (message.isAck()) {
+		Serial.print(F("Received ACK"));
+	}
+	else {
+		Serial.print(F("Received info for child: "));
+		Serial.print(message.sensor);
+	}
+	Serial.println(F(", timer reset."));
 #endif
-  }
-  else if(message.sensor == CHILD_ID_RESET) {
-	digitalWrite(READY_LED, LED_OFF);
-	digitalWrite(RUNNING_LED,LED_OFF);
-	is_Running = false;
-	send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1")); // Send tripped value to sister node
-    if (digitalRead(CONNECTION_LED) == LED_ON) {
-		  digitalWrite(READY_LED, LED_ON);
-	  }
+	if(message.sensor == CHILD_ID_RESET) {
+		digitalWrite(READY_LED, LED_OFF);
+		digitalWrite(RUNNING_LED,LED_OFF);
+		is_Running = false;
+		send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1"),true); // Send tripped value to sister node
+		digitalWrite(READY_LED, LED_ON);
 #ifdef MY_DEBUG
-	// Write some debug info
-	Serial.println(F("Reset done and sent"));
+		// Write some debug info
+		Serial.println(F("Reset done and sent"));
 #endif
-  }
-  else if(message.sensor == CHILD_ID_STARTER) {
-    if (digitalRead(CONNECTION_LED) == LED_ON) {
+	}
+	else if(message.sensor == CHILD_ID_STARTER) {
 		startTime = millis();
 		digitalWrite(READY_LED, LED_OFF);
 		digitalWrite(RUNNING_LED,LED_ON);
 		is_Running = true;
-	}
 #ifdef MY_DEBUG
-	// Write some debug info
-	Serial.println(F("Reset done and sent"));
+		// Write some debug info
+		Serial.println(F("Received starter signal"));
 #endif
-  }
+	}
 }
 
 void onFinish()
 {
-	if	(is_Running = true) {
+	if	(is_Running) {
 		RaceTime[0] = (millis() - startTime)/1000;
 		displayNeedsUpdate = true;
 	}
@@ -195,17 +213,17 @@ void updateDisplay()
 	Serial.print(F("Last run: "));
 	Serial.println(RaceTime[0]);
 	displayNeedsUpdate = false;
-	digitalWrite(READY_LED, LED_OFF);
 	digitalWrite(RUNNING_LED,LED_OFF);
 	is_Running = false;
-	send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1")); // Send tripped value to sister node
-    if (digitalRead(CONNECTION_LED) == LED_ON) {
+	send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1"),true); // Send tripped value to sister node
+    if (connected) {
 		digitalWrite(READY_LED, LED_ON);
+	}
+	else {
+		digitalWrite(READY_LED, LED_OFF);
 	}
 #ifdef MY_DEBUG
 	// Write some debug info
 	Serial.println(F("Display update done and starter reset"));
 #endif
 }
-
-
