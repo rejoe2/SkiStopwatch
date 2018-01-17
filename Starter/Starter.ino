@@ -26,8 +26,8 @@
 #include <SPI.h>
 #include <Bounce2.h>
 
-unsigned long PING_RX_MAX_TIME = 31000; // Max. time between ping signals from finish Node (in milliseconds)
-//unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
+unsigned long PING_RX_MAX_TIME = 12000; // Max. time between ping signals from finish Node (in milliseconds)
+unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
 
 MyMessage PingMsg(0, V_TRIPPED);
 MyMessage StarterMsg(0, V_TRIPPED);
@@ -57,7 +57,7 @@ bool connected = false;
 bool request_Reset = false;
 bool is_Running = false;
 
-unsigned long lastReceive; //lastSend,
+unsigned long lastSend,lastReceive; //
 
 void before() {
 
@@ -94,44 +94,49 @@ void presentation()  {
 }
 
 void setup() {
-  lastReceive = millis(); //lastSend = 
+  lastSend = lastReceive = millis(); //
 }
 
 void loop() {
+  
   unsigned long currentTime = millis();
   
   bool button[MAX_BUTTON];
-  bool bounceUpdate[MAX_BUTTON] = {false}; //true, if button pressed
+  //bool bounceUpdate[MAX_BUTTON] = {false}; //true, if button pressed
   for (uint8_t i = 0; i < MAX_BUTTON; i++) {
     debouncer[i].update();
     button[i] = debouncer[i].read() == HIGH;
-    if (button[i] != oldButton[i] && button[i]) {
+    if (button[i] != oldButton[i]) {
       //send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i]? "1" : "0")); // Send tripped value to sister node
       if (i == 0 && button[i]) {
         if (request_Reset == false) {
           // Send in the new temperature
           digitalWrite(READY_LED, LED_OFF);
-		  digitalWrite(RUNNING_LED,LED_OFF);
-		  request_Reset = true;
-		  send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0"), true); // Send tripped value to sister node
+		      digitalWrite(RUNNING_LED,LED_OFF);
+		      request_Reset = true;
+		      send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1")); // Send tripped value to sister node
         }
 #ifdef MY_DEBUG
 		Serial.print(F("Button "));
 		Serial.print(i);
 		Serial.println(F(" pressed"));
 #endif
-	  }
+	    }
       oldButton[i] = button[i];
     }
   }
   
-/*  if (currentTime - lastSend > PING_TX_TIME) {
+  if (currentTime - lastSend > PING_TX_TIME) {
     send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"));
     lastSend = currentTime;
-  }*/
-  if (connected = true && currentTime - lastReceive > PING_RX_MAX_TIME) {
+  }
+  if (connected && currentTime - lastReceive > PING_RX_MAX_TIME) {
     digitalWrite(CONNECTION_LED,LED_OFF);
-	connected = false;
+	  connected = false;
+    is_Running = false;
+    digitalWrite(RUNNING_LED,LED_OFF);
+    digitalWrite(READY_LED,LED_OFF);
+    
 #ifdef MY_DEBUG
     Serial.println(F("Lost connection to sister"));
 #endif
@@ -151,7 +156,6 @@ void receive(const MyMessage & message) {
     Serial.println(F(", timer reset."));
 #endif
 
-  
   if(message.sensor == CHILD_ID_RESET) {
 	digitalWrite(READY_LED, LED_ON);
 	request_Reset = false;
@@ -167,7 +171,7 @@ void receive(const MyMessage & message) {
 void startRace()
 {
 	if (connected) {
-		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set("1"),true);
+		send(StarterMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STARTER).set("1"), true);
 		is_Running = true;
 		digitalWrite(RUNNING_LED, LED_ON);
 		digitalWrite(READY_LED,LED_OFF);

@@ -38,8 +38,8 @@ https://github.com/rogerclarkmelbourne/Arduino_STM32/blob/master/STM32F1/librari
 #include <SPI.h>
 #include <Bounce2.h>
 
-unsigned long PING_RX_MAX_TIME = 31000; // Max. time between ping signals from finish Node (in milliseconds)
-unsigned long PING_TX_TIME = 10000; //send "alive" signal periodically
+unsigned long PING_RX_MAX_TIME = 12000; // Max. time between ping signals from finish Node (in milliseconds)
+unsigned long PING_TX_TIME = 5000; //send "alive" signal periodically
 
 MyMessage PingMsg(0, V_TRIPPED);
 MyMessage ResetMsg(0, V_TRIPPED);
@@ -69,7 +69,7 @@ bool connected = false;
 bool request_Reset = false;
 bool is_Running = false;
 
-unsigned long lastReceive; //lastSend,
+unsigned long lastSend,lastReceive; //
 
 volatile long startTime = 0;
 volatile float RaceTime[4];
@@ -110,47 +110,47 @@ void presentation()  {
 }
 
 void setup() {
-  lastReceive = millis(); //lastSend = 
+  lastSend = lastReceive = millis(); //
 }
 
 void loop()
 {
   bool button[MAX_BUTTON];
-  bool bounceUpdate[MAX_BUTTON] = {false}; //true, if button pressed
+  //bool bounceUpdate[MAX_BUTTON] = {false}; //true, if button pressed
   for (uint8_t i = 0; i < MAX_BUTTON; i++) {
     debouncer[i].update();
     button[i] = debouncer[i].read() == HIGH;
-    if (button[i] != oldButton[i] && button[i]) {
+    if (button[i] != oldButton[i]) {
       //send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(FIRST_BUTTON_ID + i).set( button[i] ? "1" : "0")); // Send tripped value to sister node
       if (i == 0 && button[i]) {
         digitalWrite(RUNNING_LED,LED_OFF);
-		is_Running = false;
-		send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set( button[i] ? "1" : "0"),true); // Send tripped value to sister node
+		    is_Running = false;
+		    send(buttonMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_RESET).set("1"), true); // Send tripped value to sister node
         if (connected) {
-			digitalWrite(READY_LED, LED_ON);
-		}
-		else {
-			digitalWrite(READY_LED, LED_OFF);
-		}
+			    digitalWrite(READY_LED, LED_ON);
+		    }
+		    else {
+			    digitalWrite(READY_LED, LED_OFF);
+		    }
       }
       oldButton[i] = button[i];
 #ifdef MY_DEBUG
- 	  Serial.print(F("Button "));
-	  Serial.print(i);
-	  Serial.println(F(" pressed"));
+ 	    Serial.print(F("Button "));
+	    Serial.print(i);
+	    Serial.println(F(" pressed"));
 #endif
     }
   }
 
   
   unsigned long currentTime = millis();
-  if (currentTime - lastReceive > PING_TX_TIME) {
-    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"),true);
-    //lastSend = currentTime;
+  if (currentTime - lastSend > PING_TX_TIME) {
+    send(PingMsg.setDestination(MY_SISTER_NODE_ID).setSensor(CHILD_ID_STATUS).set("1"));
+    lastSend = currentTime;
   }
   if (connected && currentTime - lastReceive > PING_RX_MAX_TIME) {
     digitalWrite(CONNECTION_LED,LED_OFF);
-	connected = false;
+    connected = false;
 #ifdef MY_DEBUG
     Serial.println(F("Lost connection to sister"));
 #endif
@@ -161,15 +161,18 @@ void loop()
 }
 
 void receive(const MyMessage & message) {
-    if(!connected) {
-        digitalWrite(CONNECTION_LED, LED_ON);
+  if(!connected) {
+    digitalWrite(CONNECTION_LED, LED_ON);
 		connected = true;
 	}
-    lastReceive = millis();
+  if (connected &&digitalRead(CONNECTION_LED == LOW)){
+    digitalWrite(CONNECTION_LED, LED_ON);
+  }
+  lastReceive = millis();
 #ifdef MY_DEBUG
-    // Write some debug info
-    if (message.isAck()) {
-		Serial.print(F("Received ACK"));
+  // Write some debug info
+  if (message.isAck()) {
+	  Serial.print(F("Received ACK"));
 	}
 	else {
 		Serial.print(F("Received info for child: "));
